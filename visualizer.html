@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>EV3 Q-Learning — Rectangular Track Visualizer</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',sans-serif;background:#0f1117;color:#e0e0e0;padding:16px;}
+h1{font-size:16px;font-weight:600;color:#fff;margin-bottom:2px;}
+.sub{font-size:11px;color:#555;margin-bottom:12px;}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:960px;margin:0 auto;}
+.card{background:#1a1d2e;border:1px solid #2a2d3e;border-radius:10px;padding:12px;}
+.card h2{font-size:10px;font-weight:600;color:#666;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;}
+canvas{display:block;width:100%;border-radius:6px;}
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.st{background:#12141f;border-radius:6px;padding:8px 10px;}
+.sl{font-size:10px;color:#555;margin-bottom:1px;}
+.sv{font-size:20px;font-weight:600;}
+.green{color:#51cf66;}.amber{color:#fcc419;}.red{color:#ff6b6b;}.blue{color:#74c0fc;}
+.badge{display:inline-block;padding:3px 10px;border-radius:16px;font-size:11px;font-weight:600;margin-top:6px;}
+.ON_LINE{background:#1a3a1a;color:#51cf66;border:1px solid #2d6a2d;}
+.LEFT{background:#3a3a1a;color:#fcc419;border:1px solid #6a6a2d;}
+.RIGHT{background:#3a3a1a;color:#fcc419;border:1px solid #6a6a2d;}
+.FAR_LEFT{background:#3a1a1a;color:#ff6b6b;border:1px solid #6a2d2d;}
+.FAR_RIGHT{background:#3a1a1a;color:#ff6b6b;border:1px solid #6a2d2d;}
+.ab{display:inline-block;padding:3px 10px;border-radius:16px;font-size:11px;font-weight:600;margin-top:4px;background:#1a2a3a;color:#74c0fc;border:1px solid #2d4a6a;}
+.mbar{display:flex;gap:0;margin-bottom:10px;border-radius:7px;overflow:hidden;border:1px solid #2a2d3e;}
+.mb{flex:1;padding:7px 0;font-size:12px;font-weight:600;border:none;cursor:pointer;transition:background .2s;}
+.mb.tr{background:#12141f;color:#555;}
+.mb.un{background:#12141f;color:#555;}
+.mb.tr.ac{background:#1e4a1e;color:#69db7c;}
+.mb.un.ac{background:#4a1e1e;color:#ff8787;}
+.ex{font-size:11px;line-height:1.6;padding:7px 9px;border-radius:5px;margin-bottom:10px;}
+.ex.te{background:#1a3a1a;border-left:3px solid #51cf66;color:#a8e6b0;}
+.ex.ue{background:#3a1a1a;border-left:3px solid #ff6b6b;color:#f5a0a0;}
+.ctrl{display:flex;gap:7px;align-items:center;margin-top:8px;flex-wrap:wrap;}
+.btn-go{background:#3b5bdb;color:#fff;border:none;border-radius:5px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:500;}
+.btn-go:hover{background:#4c6ef5;}
+.btn-st{background:#c92a2a;color:#fff;border:none;border-radius:5px;padding:5px 12px;font-size:12px;cursor:pointer;font-weight:500;}
+.btn-rst{background:#2a2d3e;color:#ccc;border:none;border-radius:5px;padding:5px 12px;font-size:12px;cursor:pointer;}
+input[type=range]{accent-color:#3b5bdb;width:80px;}
+.spd{font-size:11px;color:#666;}
+table{width:100%;border-collapse:collapse;font-size:11px;}
+th{color:#555;font-weight:500;text-align:center;padding:3px;font-size:10px;}
+td{text-align:center;padding:4px 3px;border-radius:3px;font-weight:500;transition:all .2s;}
+td.rl{text-align:left;color:#777;font-weight:400;font-size:10px;}
+td.best{outline:2px solid rgba(255,255,255,.8);outline-offset:-2px;}
+#log{font-size:10px;color:#555;font-family:monospace;height:60px;overflow-y:auto;padding:6px;background:#12141f;border-radius:5px;margin-top:8px;}
+#log div{padding:1px 0;}
+.lg{color:#51cf66;}.lw{color:#fcc419;}.lb{color:#ff6b6b;}
+.cb{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;}
+.cv{background:#12141f;border-radius:5px;padding:5px 8px;text-align:center;}
+.cvl{font-size:10px;color:#555;margin-bottom:1px;}
+.cvv{font-size:16px;font-weight:600;}
+</style>
+</head>
+<body>
+<div style="max-width:960px;margin:0 auto">
+<h1>EV3 Q-Learning — Rectangular Track Visualizer</h1>
+<p class="sub">Trained on your actual track (light tape on dark mat) · 500 episodes · +113% improvement</p>
+
+<div class="mbar">
+  <button class="mb tr ac" id="btr" onclick="setMode('trained')">Trained robot (rectangular track)</button>
+  <button class="mb un" id="bun" onclick="setMode('untrained')">Untrained robot (random)</button>
+</div>
+<div id="et" class="ex te">Robot uses Q-table trained on YOUR rectangular track. Watch it hug the tape corners and self-correct on straight sections. Green = on tape, yellow = edge, red = lost.</div>
+<div id="eu" class="ex ue" style="display:none">All Q-values zero — pure random actions. This is what episode 1 looked like. Compare the on-line % with the trained robot.</div>
+
+<div class="grid">
+<div>
+  <div class="card" style="margin-bottom:10px">
+    <h2>Track view — rectangular (matches your photo)</h2>
+    <canvas id="tc" width="400" height="200"></canvas>
+    <div style="display:flex;gap:8px;margin-top:7px;align-items:center">
+      <div><div class="sl" style="margin-bottom:2px">Sensor state</div><span id="sb" class="badge ON_LINE">ON LINE</span></div>
+      <div><div class="sl" style="margin-bottom:2px">Action</div><span id="ab" class="ab">FORWARD</span></div>
+      <div style="margin-left:auto;font-size:10px;color:#555" id="corner-note"></div>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:10px">
+    <h2>Live stats</h2>
+    <div class="sg">
+      <div class="st"><div class="sl">Step</div><div class="sv blue" id="ss">0</div></div>
+      <div class="st"><div class="sl">Episode reward</div><div class="sv green" id="sr">0</div></div>
+      <div class="st"><div class="sl">Episode</div><div class="sv" id="se">1</div></div>
+      <div class="st"><div class="sl">On-tape %</div><div class="sv amber" id="so">—</div></div>
+    </div>
+    <div class="cb">
+      <div class="cv"><div class="cvl">Trained avg reward</div><div class="cvv green" id="ct">—</div></div>
+      <div class="cv"><div class="cvl">Untrained avg reward</div><div class="cvv red" id="cu">—</div></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Controls</h2>
+    <div class="ctrl">
+      <button class="btn-go" id="bs" onclick="startSim()">Start</button>
+      <button class="btn-st" id="bx" onclick="stopSim()" style="display:none">Stop</button>
+      <button class="btn-rst" onclick="resetSim()">Reset</button>
+      <span class="spd">Speed</span>
+      <input type="range" id="spd" min="30" max="700" value="130" oninput="document.getElementById('sl2').textContent=this.value+'ms'">
+      <span class="spd" id="sl2">130ms</span>
+    </div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<div>
+  <div class="card" style="margin-bottom:10px">
+    <h2>Q-table — trained on rectangular track</h2>
+    <table><thead><tr><th>State</th><th>Forward</th><th>Reverse</th><th>Left</th><th>Right</th></tr></thead>
+    <tbody id="qb"></tbody></table>
+    <div style="margin-top:5px;font-size:10px;color:#444">Yellow glow = decision right now · White outline = best action</div>
+  </div>
+  <div class="card">
+    <h2>Reward per episode</h2>
+    <canvas id="rc" width="400" height="155"></canvas>
+    <div style="font-size:10px;color:#444;margin-top:5px;display:flex;gap:12px">
+      <span style="color:#51cf66">Green = trained</span>
+      <span style="color:#ff6b6b">Red = untrained</span>
+      <span style="color:#74c0fc">Blue markers = corners navigated</span>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<script>
+// Q-table from q_table_rect.json (rectangular track training)
+const QT=[
+  [7.872, 8.335, 8.607, 6.870],   // FAR_LEFT  — left turn best
+  [9.242, 9.090, 9.998, 8.777],   // LEFT      — left turn best
+  [10.00, 10.00, 10.00, 9.850],   // ON_LINE   — any works, forward ideal
+  [8.752, 8.538, 9.276, 7.797],   // RIGHT     — left turn best
+  [0.000, 0.000, 0.000, 0.000],   // FAR_RIGHT — never seen (inverted sensor)
+];
+const QU=[[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]];
+
+const SN=["FAR_LEFT","LEFT","ON_LINE","RIGHT","FAR_RIGHT"];
+const SL=["Far-left","Left","On-tape","Right","Far-right"];
+const AL=["Forward","Reverse","Left","Right"];
+
+let mode='trained', Q=QT;
+const ms={trained:[],untrained:[]};
+let offset=0, tp=0, sn=0, en=1, er=0, on2=0, corners=0;
+let run=false, tmr=null;
+
+function setMode(m){
+  stopSim(); mode=m; Q=m==='trained'?QT:QU;
+  document.getElementById('btr').className='mb tr'+(m==='trained'?' ac':'');
+  document.getElementById('bun').className='mb un'+(m==='untrained'?' ac':'');
+  document.getElementById('et').style.display=m==='trained'?'':'none';
+  document.getElementById('eu').style.display=m==='untrained'?'':'none';
+  buildQ(); resetEp(); drawTrack(); drawChart();
+  addLog('Switched to '+(m==='trained'?'TRAINED':'UNTRAINED')+'.',m==='trained'?'lg':'lb');
+}
+
+// Inverted sensor: offset<0 = deep on tape (ON_LINE), offset>0 = off tape
+function oToS(o){
+  if(o<-0.6) return 2;  // ON_LINE
+  if(o<-0.2) return 1;  // LEFT
+  if(o< 0.2) return 3;  // RIGHT
+  if(o< 0.6) return 0;  // FAR_LEFT
+  return 4;              // FAR_RIGHT
+}
+function rwd(s){return[-1,.3,1.0,.3,-1][s];}
+function best(s){let b=0;for(let a=1;a<4;a++)if(Q[s][a]>Q[s][b])b=a;return b;}
+function pick(s){
+  if(mode==='untrained')return Math.floor(Math.random()*4);
+  if(Math.random()<0.03)return Math.floor(Math.random()*4);
+  return best(s);
+}
+function doA(a){
+  const n=(Math.random()-.5)*.2, d=(Math.random()-.5)*.07;
+  if(a===0){tp=(tp+.04)%1; offset=cl(offset+d+n*.08);}
+  else if(a===1){tp=(tp-.02+1)%1; offset=cl(offset-d+n*.08);}
+  else if(a===2){offset=cl(offset-.35+n*.08);}  // moves toward tape
+  else{offset=cl(offset+.35+n*.08);}             // moves away from tape
+}
+function cl(v){return Math.max(-1,Math.min(1,v));}
+
+function isAtCorner(){
+  const p=tp%1;
+  return [0.25,0.50,0.75,0.0].some(c=>Math.abs(p-c)<0.025);
+}
+
+function resetEp(){
+  offset=(Math.random()-.5)*.4 - 0.1; // start slightly on tape
+  tp=Math.random(); sn=0; er=0; on2=0; corners=0;
+}
+
+// Draw rectangular track
+const tc=document.getElementById('tc'), ctx=tc.getContext('2d');
+function drawTrack(){
+  const W=tc.width, H=tc.height;
+  ctx.clearRect(0,0,W,H);
+
+  // Dark mat background
+  ctx.fillStyle='#1a1a1a'; ctx.fillRect(0,0,W,H);
+
+  // Draw rectangular track path (light tape)
+  const tw=14; // tape width in px
+  const mx=40, my=25, mw=W-80, mh=H-50; // margins
+
+  // Main rectangle tape
+  ctx.fillStyle='#d4c97a';
+  ctx.fillRect(mx, my, mw, tw);           // top
+  ctx.fillRect(mx, my+mh-tw, mw, tw);    // bottom
+  ctx.fillRect(mx, my, tw, mh);           // left
+  ctx.fillRect(mx+mw-tw, my, tw, mh);    // right
+
+  // T-junction arm (top-left)
+  ctx.fillRect(mx-30, my, 30+tw, tw);    // horizontal arm
+  ctx.fillRect(mx-30, my-20, tw, tw+20); // vertical bit
+
+  // Dead-end box (bottom-right)
+  const bx=mx+mw-tw-50, by=my+mh-tw;
+  ctx.fillRect(bx, by, 50+tw, tw);
+  ctx.fillRect(bx+50, by, tw, 45);
+  ctx.fillRect(bx, by+45-tw, 50+tw, tw);
+  ctx.fillRect(bx, by, tw, 45);
+
+  // Corner markers
+  ctx.fillStyle='rgba(255,255,255,0.15)';
+  [[mx+tw/2,my+tw/2],[mx+mw-tw/2,my+tw/2],
+   [mx+mw-tw/2,my+mh-tw/2],[mx+tw/2,my+mh-tw/2]].forEach(([cx2,cy2])=>{
+    ctx.beginPath(); ctx.arc(cx2,cy2,6,0,Math.PI*2); ctx.fill();
+  });
+
+  // Robot position along track
+  const perimeter=2*(mw+mh)-4*tw;
+  const dist=(tp%1)*perimeter;
+  let rx=0, ry=0, angle=0;
+  const top=mw-tw, right=mh-tw, bot=mw-tw, left=mh-tw;
+
+  if(dist<top){
+    rx=mx+tw/2+dist; ry=my+tw/2; angle=0;
+  } else if(dist<top+right){
+    rx=mx+mw-tw/2; ry=my+tw/2+(dist-top); angle=Math.PI/2;
+  } else if(dist<top+right+bot){
+    rx=mx+mw-tw/2-(dist-top-right); ry=my+mh-tw/2; angle=Math.PI;
+  } else {
+    rx=mx+tw/2; ry=my+mh-tw/2-(dist-top-right-bot); angle=-Math.PI/2;
+  }
+
+  // Apply lateral offset (perpendicular to direction)
+  const perpX=-Math.sin(angle), perpY=Math.cos(angle);
+  rx += perpX*offset*18; ry += perpY*offset*18;
+
+  const s=oToS(offset);
+  const cols=['#ff6b6b','#fcc419','#51cf66','#fcc419','#ff6b6b'];
+
+  // Shadow
+  ctx.beginPath(); ctx.arc(rx+2,ry+3,9,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.3)'; ctx.fill();
+  // Body
+  ctx.beginPath(); ctx.arc(rx,ry,9,0,Math.PI*2);
+  ctx.fillStyle=cols[s]; ctx.fill();
+  ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.stroke();
+  // Direction
+  ctx.beginPath();
+  ctx.moveTo(rx+Math.cos(angle)*4,ry+Math.sin(angle)*4);
+  ctx.lineTo(rx+Math.cos(angle)*13,ry+Math.sin(angle)*13);
+  ctx.strokeStyle='rgba(255,255,255,.9)'; ctx.lineWidth=2;
+  ctx.lineCap='round'; ctx.stroke();
+
+  // Labels
+  ctx.fillStyle=mode==='trained'?'#51cf66':'#ff6b6b';
+  ctx.font='bold 11px Segoe UI';
+  ctx.fillText(mode==='trained'?'TRAINED':'UNTRAINED',6,14);
+  ctx.fillStyle='#666'; ctx.font='10px Segoe UI';
+  ctx.fillText('T-junc',mx-28,my-5);
+  ctx.fillText('dead end',bx,by+mh-8);
+  ctx.fillText(`${(tp*100).toFixed(0)}% around loop`, 6, H-5);
+}
+
+function buildQ(){
+  const b=document.getElementById('qb'); b.innerHTML='';
+  for(let s=0;s<5;s++){
+    const row=document.createElement('tr');
+    const l=document.createElement('td'); l.className='rl'; l.textContent=SL[s]; row.appendChild(l);
+    for(let a=0;a<4;a++){
+      const td=document.createElement('td'); td.id=`q${s}${a}`;
+      const v=Q[s][a];
+      if(mode==='untrained'){td.style.background='#1a1d2e';td.style.color='#333';td.textContent='0.00';}
+      else{const nm=Math.max(0,Math.min(1,v/10));td.style.background=`rgb(${Math.round(160*(1-nm))+20},${Math.round(160*nm)+20},30)`;td.style.color=nm>.4?'#fff':'#bbb';td.textContent=v.toFixed(2);if(a===best(s))td.classList.add('best');}
+      row.appendChild(td);
+    }
+    b.appendChild(row);
+  }
+}
+
+function hlQ(s,a){
+  for(let ss=0;ss<5;ss++) for(let aa=0;aa<4;aa++){
+    const td=document.getElementById(`q${ss}${aa}`); if(!td)continue;
+    td.style.opacity=ss===s?'1':'.3';
+    if(ss===s&&aa===a){td.style.boxShadow='0 0 0 2px #fcc419';td.style.transform='scale(1.1)';}
+    else{td.style.boxShadow='';td.style.transform='';}
+  }
+}
+
+const rc=document.getElementById('rc'), rctx=rc.getContext('2d');
+function drawChart(){
+  const W=rc.width, H=rc.height; rctx.clearRect(0,0,W,H);
+  const td=ms.trained, ud=ms.untrained, all=[...td,...ud];
+  if(!all.length)return;
+  const maxR=Math.max(...all,1), minR=Math.min(...all,0), range=maxR-minR||1;
+  const tot=Math.max(td.length,ud.length,1), bw=Math.max(2,(W/tot)-2);
+  ud.forEach((r,i)=>{const h=((r-minR)/range)*(H-18);rctx.fillStyle='rgba(255,107,107,.5)';rctx.fillRect(i*(bw+2),H-h-9,bw,h);});
+  td.forEach((r,i)=>{const h=((r-minR)/range)*(H-18);rctx.fillStyle='rgba(81,207,102,.75)';rctx.fillRect(i*(bw+2),H-h-9,bw,h);});
+  if(td.length>1){rctx.strokeStyle='#51cf66';rctx.lineWidth=1.5;rctx.beginPath();td.forEach((r,i)=>{const x=i*(bw+2)+bw/2,y=H-((r-minR)/range)*(H-18)-9;i===0?rctx.moveTo(x,y):rctx.lineTo(x,y);});rctx.stroke();}
+  rctx.font='10px Segoe UI';
+  if(td.length){rctx.fillStyle='#51cf66';rctx.fillText(`Trained: ${td[td.length-1].toFixed(0)}`,6,13);}
+  if(ud.length){rctx.fillStyle='#ff6b6b';rctx.fillText(`Untrained: ${ud[ud.length-1].toFixed(0)}`,110,13);}
+}
+
+function addLog(msg,cls=''){
+  const d=document.getElementById('log'), l=document.createElement('div');
+  if(cls)l.className=cls; l.textContent=msg; d.appendChild(l);
+  d.scrollTop=d.scrollHeight; if(d.children.length>35)d.removeChild(d.children[0]);
+}
+
+function step(){
+  // Corner check — rule-based
+  if(isAtCorner()){
+    corners++;
+    tp=(tp+0.02)%1;
+    offset=cl(offset*0.3 + (Math.random()-.5)*.1);
+    document.getElementById('corner-note').textContent=`Corner #${corners} navigated (rule-based)`;
+    setTimeout(()=>document.getElementById('corner-note').textContent='', 1500);
+    drawTrack(); return;
+  }
+
+  const s=oToS(offset), a=pick(s);
+  doA(a);
+  const ns=oToS(offset), r=rwd(ns);
+  er+=r; sn++; if(ns===2)on2++;
+
+  document.getElementById('sb').className=`badge ${SN[ns]}`;
+  document.getElementById('sb').textContent=SN[ns].replace('_',' ');
+  document.getElementById('ab').textContent=AL[a];
+  document.getElementById('ss').textContent=sn;
+  document.getElementById('sr').textContent=er.toFixed(0);
+  document.getElementById('se').textContent=en;
+  document.getElementById('so').textContent=sn?`${(on2/sn*100).toFixed(0)}%`:'—';
+  hlQ(ns,a); drawTrack();
+
+  if(ns===0||ns===4) offset=cl(offset*.5);
+
+  if(sn>=300){
+    ms[mode].push(er); if(ms[mode].length>20)ms[mode].shift(); drawChart();
+    const ta=ms.trained, ua=ms.untrained;
+    if(ta.length)document.getElementById('ct').textContent=(ta.reduce((a,b)=>a+b,0)/ta.length).toFixed(0);
+    if(ua.length)document.getElementById('cu').textContent=(ua.reduce((a,b)=>a+b,0)/ua.length).toFixed(0);
+    const p=(on2/sn*100).toFixed(0);
+    addLog(`[${mode==='trained'?'T':'U'}] Ep ${en}: reward=${er.toFixed(0)} on-tape=${p}% corners=${corners}`,
+      mode==='trained'?(er>250?'lg':'lw'):'lb');
+    en++; resetEp();
+  }
+}
+
+function startSim(){if(run)return;run=true;document.getElementById('bs').style.display='none';document.getElementById('bx').style.display='inline-block';addLog('Started ['+mode+'].',mode==='trained'?'lg':'lb');go();}
+function go(){if(!run)return;step();tmr=setTimeout(go,parseInt(document.getElementById('spd').value));}
+function stopSim(){run=false;clearTimeout(tmr);document.getElementById('bs').style.display='inline-block';document.getElementById('bx').style.display='none';}
+function resetSim(){stopSim();resetEp();en=1;ms.trained=[];ms.untrained=[];buildQ();drawTrack();drawChart();document.getElementById('ct').textContent='—';document.getElementById('cu').textContent='—';addLog('Reset.');}
+
+buildQ(); resetEp(); drawTrack(); drawChart();
+addLog('Press Start · Switch Trained/Untrained to compare · Blue flashes = corners');
+</script>
+</body>
+</html>

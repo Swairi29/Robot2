@@ -25,7 +25,7 @@ NUM_EPISODES   = 500     # sim is fast — run more episodes than on hardware
 MAX_STEPS      = 400     # steps per episode
 LOG_EVERY      = 50      # print Q-table every N episodes
 SAVE_EVERY     = 100     # save Q-table to disk every N episodes
-QTABLE_PATH    = "q_table_sim.json"
+QTABLE_PATH    = "q_table_rect.json"
 
 # Hyperparameters
 ALPHA         = 0.3

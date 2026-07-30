@@ -1,54 +1,62 @@
 """
-calibrate.py
-============
-Run this BEFORE training to measure the real light sensor values
-on your specific track and lighting conditions.
+calibrate.py  — UPDATED FOR LIGHT TAPE ON DARK MAT
+====================================================
+IMPORTANT: Your track has light (cream/yellow) tape on a dark mat.
+This is the OPPOSITE of the standard black-line-on-white setup.
 
-Place the robot at each position (far-left, on-line, far-right, etc.)
-and press Enter — the script will print the raw value.
+What to expect:
+  - On the dark mat:   sensor reads LOW  (5–20)
+  - On the light tape: sensor reads HIGH (60–80)
+  - On the tape edge:  sensor reads MID  (30–50)
 
-Then update the THRESHOLD_* constants in ev3_interface.py accordingly.
-
-Run with:
-    python calibrate.py
+Run this before training to get YOUR exact values.
 """
 
-from ev3_interface import EV3Interface
+from ev3dev2.sensor import INPUT_3
+from ev3dev2.sensor.lego import ColorSensor
 import time
 
 def calibrate():
-    robot = EV3Interface()
+    color = ColorSensor(INPUT_3)
+    color.mode = "COL-REFLECT"
 
     positions = [
-        ("FAR LEFT  (sensor fully off line, left side)", "FAR_LEFT"),
-        ("LEFT EDGE (sensor on left edge of line)",      "LEFT"),
-        ("ON LINE   (sensor centred on line)",           "ON_LINE"),
-        ("RIGHT EDGE(sensor on right edge of line)",     "RIGHT"),
-        ("FAR RIGHT (sensor fully off line, right side)","FAR_RIGHT"),
+        ("DARK MAT     (sensor fully OFF the tape)",     "DARK_FLOOR"),
+        ("TAPE EDGE    (sensor half on tape, half off)", "TAPE_EDGE"),
+        ("ON TAPE      (sensor fully ON the tape)",      "FULL_TAPE"),
+        ("CORNER AREA  (wide tape at a corner)",         "CORNER"),
+        ("T-JUNCTION   (where two tape lines meet)",     "T_JUNCTION"),
     ]
 
-    print("=== Color Sensor Calibration ===")
-    print("Place the robot at each position, then press Enter.\n")
+    print("=== Calibration for LIGHT TAPE on DARK MAT ===")
+    print("Expected: dark mat = LOW value, light tape = HIGH value\n")
 
     readings = {}
-    for description, name in positions:
-        input(f"  Position: {description}\n  Press Enter to read...")
-        samples = []
-        for _ in range(10):
-            samples.append(robot.read_raw_light())
-            time.sleep(0.05)
+    for desc, name in positions:
+        input(f"  Place sensor at: {desc}\n  Press Enter to read...")
+        samples = [color.reflected_light_intensity for _ in range(15)]
+        time.sleep(0.01)
         avg = sum(samples) / len(samples)
         readings[name] = avg
-        print(f"  → Average reading: {avg:.1f}\n")
+        print(f"  → Average: {avg:.1f}   (min={min(samples)}, max={max(samples)})\n")
 
     print("\n=== Suggested thresholds for ev3_interface.py ===")
-    print(f"THRESHOLD_FAR_LEFT  = {(readings['FAR_LEFT']  + readings['LEFT'])  / 2:.0f}")
-    print(f"THRESHOLD_LEFT      = {(readings['LEFT']      + readings['ON_LINE'])/ 2:.0f}")
-    print(f"THRESHOLD_ON_LINE   = {(readings['ON_LINE']   + readings['RIGHT'])  / 2:.0f}")
-    print(f"THRESHOLD_RIGHT     = {(readings['RIGHT']     + readings['FAR_RIGHT'])/2:.0f}")
-    print("\nUpdate THRESHOLD_* in ev3_interface.py with these values, then run train.py")
-
-    robot.cleanup()
+    dark  = readings["DARK_FLOOR"]
+    edge  = readings["TAPE_EDGE"]
+    tape  = readings["FULL_TAPE"]
+    print(f"  Dark mat reading:   {dark:.0f}")
+    print(f"  Tape edge reading:  {edge:.0f}")
+    print(f"  Full tape reading:  {tape:.0f}")
+    print()
+    # Inverted thresholds
+    t1 = (dark + edge) / 2
+    t2 = (edge + tape) / 2
+    t3 = tape - (tape - edge) * 0.3
+    print(f"THRESHOLD_ON_TAPE   = {t2:.0f}   (above this = on/near tape)")
+    print(f"THRESHOLD_EDGE_NEAR = {t1:.0f}   (above this = edge region)")
+    print(f"T_JUNCTION_LIGHT_LEVEL = {readings['T_JUNCTION']:.0f}")
+    print()
+    print("Update these values in ev3_interface.py, then run train.py")
 
 if __name__ == "__main__":
     calibrate()

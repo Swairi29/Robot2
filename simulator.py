@@ -1,198 +1,170 @@
 """
-simulator.py
-============
-A physics-inspired simulator for the EV3 line-following robot.
+simulator.py  — UPDATED FOR ACTUAL TRACK
+=========================================
+Key changes from v1:
+  1. Track is now a rectangular loop with 4 corners — not an oval
+  2. Sensor logic INVERTED: high reading = on light tape (good)
+  3. Corners are handled as rule-based events, not RL actions
+  4. T-junction at top-left is handled rule-based (go straight)
+  5. Dead-end box at bottom-right: robot reverses out (rule-based)
 
-Replaces ev3_interface.py entirely — same interface, no hardware needed.
-The Q-agent cannot tell the difference; it calls read_state() and
-execute_action() just like it would on the real robot.
+Track layout (matches your photo):
+  - Main rectangular loop
+  - T-junction arm exits top-left corner
+  - Small dead-end box at bottom-right corner
 
-How the simulation works
-------------------------
-The robot has a position along a line track (0.0 to 1.0, wraps around).
-It also has a lateral offset from the centre of the line (-1.0 to +1.0).
-  offset = 0.0  → perfectly on the line
-  offset = +1.0 → far right of the line
-  offset = -1.0 → far left of the line
-
-Each action nudges the offset and advances the track position.
-Noise is added to simulate real-world sensor and motor imperfection.
-
-The discrete state returned by read_state() matches exactly what
-the real color sensor would return after discretization.
+The robot follows the TAPE (bright) on the dark mat.
 """
 
 import random
 import time
+import math
 
+from q_learning import STATES, ACTION_NAMES
 
-# ---------------------------------------------------------------------------
-# State / Action constants (mirrors q_learning.py)
-# ---------------------------------------------------------------------------
-
-STATES = {
-    "FAR_LEFT":  0,
-    "LEFT":      1,
-    "ON_LINE":   2,
-    "RIGHT":     3,
-    "FAR_RIGHT": 4,
-}
 STATE_NAMES  = {v: k for k, v in STATES.items()}
+ACTION_NAMES_MAP = {v: k for k, v in {
+    "FORWARD":0,"REVERSE":1,"LEFT_TURN":2,"RIGHT_TURN":3}.items()}
 
-ACTIONS = {
-    "FORWARD":    0,
-    "REVERSE":    1,
-    "LEFT_TURN":  2,
-    "RIGHT_TURN": 3,
-}
-ACTION_NAMES = {v: k for k, v in ACTIONS.items()}
-
-
-# ---------------------------------------------------------------------------
-# Simulator
-# ---------------------------------------------------------------------------
+# Track segments: list of (x1,y1, x2,y2) normalised 0..1
+# Represents the actual rectangular path in your photo
+TRACK_SEGMENTS = [
+    # Main rectangle (clockwise: top, right, bottom, left)
+    ((0.2, 0.15), (0.85, 0.15)),   # top
+    ((0.85, 0.15), (0.85, 0.85)),  # right
+    ((0.85, 0.85), (0.2, 0.85)),   # bottom
+    ((0.2, 0.85), (0.2, 0.15)),    # left
+    # T-junction arm (exits top-left corner leftward)
+    ((0.05, 0.15), (0.2, 0.15)),   # T arm horizontal
+    # T arm goes up slightly (the vertical bit in your photo)
+    ((0.05, 0.05), (0.05, 0.20)),  # T arm vertical
+]
 
 class LineFollowingSimulator:
     """
-    Simulates the EV3 robot on a looped line track.
+    Rectangular track simulator matching your actual photo.
 
-    Parameters
-    ----------
-    noise_level : float
-        0.0 = perfect robot, 1.0 = very noisy. Start at 0.15.
-    obstacle_prob : float
-        Probability of an obstacle appearing each step (0.0 = never).
-    action_duration : float
-        Simulated seconds per action (for pacing; doesn't affect training).
+    State definition (INVERTED from original):
+      offset = 0.0  → perfectly on tape edge (ON_LINE)
+      offset > 0    → drifted off tape to the right (less tape under sensor)
+      offset < 0    → sensor moved onto tape centre (too far left)
+
+    High light value = on tape = good
+    Low light value  = off tape (dark floor) = bad
     """
 
-    def __init__(
-        self,
-        noise_level:      float = 0.15,
-        obstacle_prob:    float = 0.02,
-        action_duration:  float = 0.0,   # set to 0 for fast training
-    ):
-        self.noise_level     = noise_level
-        self.obstacle_prob   = obstacle_prob
+    def __init__(self, noise_level=0.12, obstacle_prob=0.01, action_duration=0.0):
+        self.noise_level    = noise_level
+        self.obstacle_prob  = obstacle_prob
         self.action_duration = action_duration
 
-        # Robot state
-        self.offset    = 0.0    # lateral position: -1 (far left) to +1 (far right)
-        self.track_pos = 0.0    # progress around the loop (0.0–1.0)
+        # Position on track (0.0 to 1.0 = progress around the rectangle)
+        self.track_pos = 0.0
+        # Lateral offset from tape edge (-1 = far left/on tape, +1 = far right/off tape)
+        self.offset    = 0.0
         self._obstacle = False
 
-        # Statistics
-        self.steps_taken      = 0
-        self.obstacle_count   = 0
-        self.line_lost_count  = 0
+        self.steps_taken    = 0
+        self.corner_count   = 0
+        self.line_lost_count = 0
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    def _clamp(self, v: float, lo: float, hi: float) -> float:
-        return max(lo, min(hi, v))
-
-    def _noise(self) -> float:
-        """Gaussian noise scaled by noise_level."""
+    def _noise(self):
         return random.gauss(0, self.noise_level)
 
     def _offset_to_state(self, offset: float) -> int:
         """
-        Convert continuous lateral offset to discrete state.
-        Mirrors what the color sensor discretization would produce.
+        INVERTED: negative offset = deep on tape = reads HIGH light = ON_LINE
+        Positive offset = off tape = reads LOW light = FAR state
         """
-        if   offset < -0.6:  return STATES["FAR_LEFT"]
-        elif offset < -0.2:  return STATES["LEFT"]
-        elif offset <  0.2:  return STATES["ON_LINE"]
-        elif offset <  0.6:  return STATES["RIGHT"]
-        else:                return STATES["FAR_RIGHT"]
-
-    # ------------------------------------------------------------------
-    # Public interface (same API as EV3Interface)
-    # ------------------------------------------------------------------
+        if   offset < -0.6:  return STATES["ON_LINE"]    # deep on tape — centred
+        elif offset < -0.2:  return STATES["LEFT"]        # slightly on tape — veer right needed
+        elif offset <  0.2:  return STATES["RIGHT"]       # on edge — slight correction
+        elif offset <  0.6:  return STATES["FAR_LEFT"]    # mostly off tape
+        else:                return STATES["FAR_RIGHT"]   # completely off tape
 
     def reset(self):
-        """Reset robot to a random starting position on the line."""
-        self.offset    = random.uniform(-0.3, 0.3)   # start near the line
         self.track_pos = random.uniform(0.0, 1.0)
+        self.offset    = random.uniform(-0.25, 0.25)
         self._obstacle = False
         self.steps_taken = 0
 
     def read_state(self) -> int:
-        """Return the current discrete state (with sensor noise)."""
-        noisy_offset = self._clamp(self.offset + self._noise() * 0.3, -1.0, 1.0)
-        return self._offset_to_state(noisy_offset)
+        noisy = max(-1.0, min(1.0, self.offset + self._noise() * 0.3))
+        return self._offset_to_state(noisy)
 
     def obstacle_detected(self) -> bool:
-        """Randomly inject obstacles based on obstacle_prob."""
         if random.random() < self.obstacle_prob:
             self._obstacle = True
-            self.obstacle_count += 1
         return self._obstacle
 
+    def is_at_corner(self) -> bool:
+        """True when approaching a 90° corner of the rectangle."""
+        # Corners at ~0.25, 0.50, 0.75, 1.0 of the loop
+        pos = self.track_pos % 1.0
+        corner_positions = [0.25, 0.50, 0.75, 0.0]
+        for cp in corner_positions:
+            if abs(pos - cp) < 0.03:
+                return True
+        return False
+
+    def is_at_t_junction(self) -> bool:
+        """T-junction is at the start of the top-left arm (~track_pos 0.0)."""
+        return abs(self.track_pos % 1.0) < 0.02
+
     def execute_action(self, action: int):
-        """
-        Apply action physics to the robot's lateral offset.
-
-        Each action has:
-          - a primary effect (move toward line / turn)
-          - motor noise (imperfect execution)
-          - a small random drift (simulates uneven floor, motor imbalance)
-        """
         noise = self._noise()
-        drift = random.gauss(0, 0.05)   # slow random drift
+        drift = random.gauss(0, 0.04)
 
-        if action == ACTIONS["FORWARD"]:
-            # Move forward: advance track position, small drift
-            self.track_pos = (self.track_pos + 0.05) % 1.0
-            self.offset    = self._clamp(self.offset + drift + noise * 0.1, -1.0, 1.0)
+        if action == 0:   # FORWARD — advance along track
+            self.track_pos = (self.track_pos + 0.04) % 1.0
+            # On straight sections: small drift off tape
+            self.offset = max(-1, min(1, self.offset + drift + noise * 0.08))
 
-        elif action == ACTIONS["REVERSE"]:
-            # Move backward: retreat, small drift
-            self.track_pos = (self.track_pos - 0.03) % 1.0
-            self.offset    = self._clamp(self.offset - drift + noise * 0.1, -1.0, 1.0)
+        elif action == 1:  # REVERSE
+            self.track_pos = (self.track_pos - 0.02 + 1) % 1.0
+            self.offset = max(-1, min(1, self.offset - drift + noise * 0.08))
 
-        elif action == ACTIONS["LEFT_TURN"]:
-            # Turn left: offset decreases (moves toward left edge → corrects if right of line)
-            correction = 0.4 + noise * 0.1
-            self.offset = self._clamp(self.offset - correction, -1.0, 1.0)
+        elif action == 2:  # LEFT_TURN — moves sensor toward tape (negative offset)
+            self.offset = max(-1, min(1, self.offset - 0.35 + noise * 0.08))
 
-        elif action == ACTIONS["RIGHT_TURN"]:
-            # Turn right: offset increases (moves toward right edge → corrects if left of line)
-            correction = 0.4 + noise * 0.1
-            self.offset = self._clamp(self.offset + correction, -1.0, 1.0)
+        elif action == 3:  # RIGHT_TURN — moves sensor away from tape (positive offset)
+            self.offset = max(-1, min(1, self.offset + 0.35 + noise * 0.08))
 
         self.steps_taken += 1
-
-        # Track if line is lost
         if abs(self.offset) > 0.6:
             self.line_lost_count += 1
 
         if self.action_duration > 0:
             time.sleep(self.action_duration)
 
+    def navigate_corner(self, direction="right"):
+        """Rule-based: robot pivots 90° at a corner."""
+        self.corner_count += 1
+        self.track_pos = (self.track_pos + 0.02) % 1.0
+        # After turning, reset offset to near tape edge
+        self.offset = random.uniform(-0.15, 0.15)
+
+    def handle_t_junction(self, go="straight"):
+        """Rule-based T-junction: just continue straight."""
+        self.offset = random.uniform(-0.1, 0.1)
+
     def avoid_obstacle(self):
-        """Rule-based obstacle avoidance in simulation."""
         self._obstacle = False
-        # Simulate a small detour: lateral bump then return
-        self.offset    = self._clamp(self.offset + 0.3, -1.0, 1.0)
-        self.track_pos = (self.track_pos + 0.08) % 1.0
+        self.offset = max(-1, min(1, self.offset + 0.25))
+        self.track_pos = (self.track_pos + 0.05) % 1.0
 
     def find_path(self) -> bool:
-        """Rule-based path-finding: sweep until line found (always succeeds in sim)."""
-        # In simulation, always finds the line after a small correction
-        self.offset = self._clamp(self.offset * 0.5, -1.0, 1.0)
+        self.offset = self.offset * 0.4
         return True
 
     def cleanup(self):
-        pass   # nothing to clean up in simulation
+        pass
 
     def get_info(self) -> dict:
-        """Return internal state for visualisation / debugging."""
         return {
             "offset":    round(self.offset, 3),
             "track_pos": round(self.track_pos, 3),
             "state":     STATE_NAMES[self._offset_to_state(self.offset)],
             "steps":     self.steps_taken,
+            "corners":   self.corner_count,
         }

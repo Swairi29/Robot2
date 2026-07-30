@@ -20,7 +20,7 @@ import sys
 from q_learning    import QLearningAgent, STATES, ACTION_NAMES
 from ev3_interface import EV3Interface
 
-QTABLE_PATH = "q_table.json"
+QTABLE_PATH = "q_table_react.json"
 
 running = True
 robot   = None

@@ -41,7 +41,7 @@ def train():
     agent.load(QTABLE_PATH)
     robot = EV3Interface()
 
-    print(f"\n[Train] {NUM_EPISODES} episodes on RECTANGULAR track")
+    print("\n[Train] {} episodes on RECTANGULAR track".format(NUM_EPISODES))
     print("[Train] Track: LIGHT TAPE on DARK MAT")
     print("[Train] Corners and T-junctions handled by rules (not RL)\n")
 
@@ -49,7 +49,7 @@ def train():
         if not running:
             break
 
-        input(f"  Ep {episode}/{NUM_EPISODES}  ε={agent.epsilon:.3f} → Place robot on tape, press Enter...")
+        input("  Ep {}/{}  ε={:.3f} → Place robot on tape, press Enter...".format(episode, NUM_EPISODES, agent.epsilon))
 
         state        = robot.read_state()
         total_reward = 0.0
@@ -86,7 +86,7 @@ def train():
                 if found:
                     next_state = robot.read_state()
                 else:
-                    print(f"  [Ep {episode}] Tape lost at step {step}, ending episode.")
+                    print("  [Ep {}] Tape lost at step {}, ending episode.".format(episode, step))
                     break
 
             agent.update(state, action, reward, next_state)
@@ -94,7 +94,7 @@ def train():
 
         robot.stop()
         agent.end_episode(total_reward)
-        print(f"  Ep {episode:>4}  reward={total_reward:>8.2f}  ε={agent.epsilon:.3f}")
+        print("  Ep {:>4}  reward={:>8.2f}  ε={:.3f}".format(episode, total_reward, agent.epsilon))
 
         if episode % LOG_EVERY == 0:
             print(); agent.print_q_table(); print()

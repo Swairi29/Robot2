@@ -11,7 +11,7 @@ Key changes from v1:
 """
 
 from ev3dev2.motor  import LargeMotor, OUTPUT_B, OUTPUT_C, SpeedPercent
-from ev3dev2.sensor import INPUT_1, INPUT_3
+from ev3dev2.sensor import INPUT_1, INPUT_4
 from ev3dev2.sensor.lego import ColorSensor, UltrasonicSensor
 import time
 
@@ -58,7 +58,7 @@ class EV3Interface:
         print("[EV3] Connecting...")
         self.left_motor  = LargeMotor(OUTPUT_B)
         self.right_motor = LargeMotor(OUTPUT_C)
-        self.color       = ColorSensor(INPUT_3)
+        self.color       = ColorSensor(INPUT_4)
         self.ultrasonic  = UltrasonicSensor(INPUT_1)
         self.color.mode      = "COL-REFLECT"
         self.ultrasonic.mode = "US-DIST-CM"
@@ -149,7 +149,7 @@ class EV3Interface:
         direction: 'right' for clockwise, 'left' for anticlockwise.
         NOT learned by RL.
         """
-        print(f"[EV3] Navigating {direction} corner...")
+        print("[EV3] Navigating {} corner...".format(direction))
         # Creep forward to centre robot on corner
         self.move_forward()
         time.sleep(0.2)
@@ -170,7 +170,7 @@ class EV3Interface:
         go: 'straight', 'left', or 'right'
         NOT learned by RL.
         """
-        print(f"[EV3] T-junction — going {go}")
+        print("[EV3] T-junction — going {}".format(go))
         if go == "straight":
             self.move_forward()
             time.sleep(0.3)

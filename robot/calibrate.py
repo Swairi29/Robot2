@@ -12,12 +12,12 @@ What to expect:
 Run this before training to get YOUR exact values.
 """
 
-from ev3dev2.sensor import INPUT_3
+from ev3dev2.sensor import INPUT_4
 from ev3dev2.sensor.lego import ColorSensor
 import time
 
 def calibrate():
-    color = ColorSensor(INPUT_3)
+    color = ColorSensor(INPUT_4)
     color.mode = "COL-REFLECT"
 
     positions = [
@@ -33,28 +33,28 @@ def calibrate():
 
     readings = {}
     for desc, name in positions:
-        input(f"  Place sensor at: {desc}\n  Press Enter to read...")
+        input("  Place sensor at: {}\n  Press Enter to read...".format(desc))
         samples = [color.reflected_light_intensity for _ in range(15)]
         time.sleep(0.01)
         avg = sum(samples) / len(samples)
         readings[name] = avg
-        print(f"  → Average: {avg:.1f}   (min={min(samples)}, max={max(samples)})\n")
+        print("  → Average: {:.1f}   (min={}, max={})\n".format(avg, min(samples), max(samples)))
 
     print("\n=== Suggested thresholds for ev3_interface.py ===")
     dark  = readings["DARK_FLOOR"]
     edge  = readings["TAPE_EDGE"]
     tape  = readings["FULL_TAPE"]
-    print(f"  Dark mat reading:   {dark:.0f}")
-    print(f"  Tape edge reading:  {edge:.0f}")
-    print(f"  Full tape reading:  {tape:.0f}")
+    print("  Dark mat reading:   {:.0f}".format(dark))
+    print("  Tape edge reading:  {:.0f}".format(edge))
+    print("  Full tape reading:  {:.0f}".format(tape))
     print()
     # Inverted thresholds
     t1 = (dark + edge) / 2
     t2 = (edge + tape) / 2
     t3 = tape - (tape - edge) * 0.3
-    print(f"THRESHOLD_ON_TAPE   = {t2:.0f}   (above this = on/near tape)")
-    print(f"THRESHOLD_EDGE_NEAR = {t1:.0f}   (above this = edge region)")
-    print(f"T_JUNCTION_LIGHT_LEVEL = {readings['T_JUNCTION']:.0f}")
+    print("THRESHOLD_ON_TAPE   = {:.0f}   (above this = on/near tape)".format(t2))
+    print("THRESHOLD_EDGE_NEAR = {:.0f}   (above this = edge region)".format(t1))
+    print("T_JUNCTION_LIGHT_LEVEL = {:.0f}".format(readings['T_JUNCTION']))
     print()
     print("Update these values in ev3_interface.py, then run train.py")
 

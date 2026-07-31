@@ -63,7 +63,7 @@ def deploy():
 
         # Best known action (no exploration)
         action = agent.choose_action(state)
-        print(f"  Step {step:>5}  state={state}  action={ACTION_NAMES[action]}")
+        print("  Step {:>5}  state={}  action={}".format(step, state, ACTION_NAMES[action]))
 
         robot.execute_action(action)
         next_state = robot.read_state()

@@ -30,7 +30,10 @@ ACTION_DURATION = 0.3  # seconds per action step
 
 # ── INVERTED thresholds for light-tape-on-dark-mat ────────────────────────
 # Run calibrate.py first to get YOUR exact values.
-# With light tape on dark: tape ≈ 60-80, dark floor ≈ 5-20, edge ≈ 30-45
+# Calibrated on this track:
+#   dark mat  ≈ 3
+#   tape edge ≈ 18
+#   full tape ≈ 30
 #
 # State mapping (INVERTED from original):
 #   LOW reading  → ON the light tape   → ON_LINE
@@ -40,16 +43,15 @@ ACTION_DURATION = 0.3  # seconds per action step
 # The robot is FAR_RIGHT when the sensor sees mostly dark (high) on the RIGHT
 #
 # With a single colour sensor, we discretize the reflected intensity:
-THRESHOLD_ON_TAPE     = 55   # below this = on or near the tape
-THRESHOLD_EDGE_NEAR   = 40   # below this = clearly on tape
-THRESHOLD_EDGE_FAR    = 25   # below this = fully on tape (centred)
+THRESHOLD_ON_TAPE     = 24   # above this = on or near the tape
+THRESHOLD_EDGE_NEAR   = 11   # above this = edge region
+THRESHOLD_EDGE_FAR    = 6    # above this = transition away from dark mat
 
 # Obstacle distance
 OBSTACLE_DISTANCE_CM  = 15
 
-# T-junction: if sensor reads full tape AND robot was just turning,
-# it likely hit a T. Handle rule-based.
-T_JUNCTION_LIGHT_LEVEL = 70   # very bright = wide tape = T-junction
+# T-junction: very bright reading indicates wide tape area.
+T_JUNCTION_LIGHT_LEVEL = 33   # observed on the T-junction during calibration
 
 
 class EV3Interface:
@@ -59,9 +61,13 @@ class EV3Interface:
         self.left_motor  = LargeMotor(OUTPUT_B)
         self.right_motor = LargeMotor(OUTPUT_C)
         self.color       = ColorSensor(INPUT_4)
-        self.ultrasonic  = UltrasonicSensor(INPUT_1)
         self.color.mode      = "COL-REFLECT"
-        self.ultrasonic.mode = "US-DIST-CM"
+        self.ultrasonic = None
+        try:
+            self.ultrasonic = UltrasonicSensor(INPUT_1)
+            self.ultrasonic.mode = "US-DIST-CM"
+        except Exception:
+            print("[EV3] Ultrasonic sensor not detected on in1; obstacle avoidance disabled.")
         print("[EV3] Connected.")
 
     # ── Sensor reading → discrete state (INVERTED) ────────────────────────
@@ -73,8 +79,8 @@ class EV3Interface:
         INVERTED mapping for light tape on dark mat.
 
         The EV3 colour sensor returns reflected light intensity (0-100).
-        On dark background: low value (~5-20)
-        On light tape:      high value (~60-80)
+        On dark background: low value (~3)
+        On light tape:      higher value (~18-30)
 
         So:
           High reading → ON the tape → good (ON_LINE or near)
@@ -92,12 +98,12 @@ class EV3Interface:
         """
         light = self.read_raw_light()
 
-        # Inverted from original — high light = on tape = good
-        if   light > 65:  return STATES["ON_LINE"]    # fully on tape
-        elif light > 45:  return STATES["RIGHT"]       # drifting left of tape edge
-        elif light > 30:  return STATES["LEFT"]        # drifting right of tape edge
-        elif light > 15:  return STATES["FAR_LEFT"]    # mostly off tape, left
-        else:             return STATES["FAR_RIGHT"]   # completely off tape
+        # Higher reading means the sensor is seeing more tape.
+        if   light >= THRESHOLD_ON_TAPE:   return STATES["ON_LINE"]
+        elif light >= THRESHOLD_EDGE_NEAR: return STATES["RIGHT"]
+        elif light >= THRESHOLD_EDGE_FAR:  return STATES["LEFT"]
+        elif light >= 3:                   return STATES["FAR_LEFT"]
+        else:                              return STATES["FAR_RIGHT"]
 
     def is_t_junction(self) -> bool:
         """
@@ -107,6 +113,8 @@ class EV3Interface:
         return self.read_raw_light() > T_JUNCTION_LIGHT_LEVEL
 
     def obstacle_detected(self) -> bool:
+        if self.ultrasonic is None:
+            return False
         return self.ultrasonic.distance_centimeters < OBSTACLE_DISTANCE_CM
 
     # ── Motor commands ────────────────────────────────────────────────────
@@ -170,7 +178,7 @@ class EV3Interface:
         go: 'straight', 'left', or 'right'
         NOT learned by RL.
         """
-        print("[EV3] T-junction — going {}".format(go))
+        print("[EV3] T-junction - going {}".format(go))
         if go == "straight":
             self.move_forward()
             time.sleep(0.3)
@@ -200,7 +208,7 @@ class EV3Interface:
         Returns True if found, False if timeout.
         NOT learned by RL.
         """
-        print("[EV3] Lost tape — searching...")
+        print("[EV3] Lost tape - searching...")
         start = time.time()
         while time.time() - start < 5.0:
             self.turn_right()

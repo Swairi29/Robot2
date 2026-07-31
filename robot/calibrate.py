@@ -38,7 +38,7 @@ def calibrate():
         time.sleep(0.01)
         avg = sum(samples) / len(samples)
         readings[name] = avg
-        print("  → Average: {:.1f}   (min={}, max={})\n".format(avg, min(samples), max(samples)))
+        print("  -> Average: {:.1f}   (min={}, max={})\n".format(avg, min(samples), max(samples)))
 
     print("\n=== Suggested thresholds for ev3_interface.py ===")
     dark  = readings["DARK_FLOOR"]

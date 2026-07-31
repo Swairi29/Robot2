@@ -10,7 +10,6 @@ State space  (5 states)  : discretized color sensor reading
 Action space (4 actions) : Forward, Reverse, Left Turn, Right Turn
 """
 
-import numpy as np
 import random
 import json
 import os
@@ -104,10 +103,11 @@ class QLearningAgent:
         self.epsilon_min   = epsilon_min
 
         # Q-table: rows = states, columns = actions, initialised to zero
-        self.q_table = np.zeros((N_STATES, N_ACTIONS))
+        self.q_table = [[0.0 for _ in range(N_ACTIONS)] for _ in range(N_STATES)]
 
         # Training history (for logging / demo)
         self.episode_rewards = []
+        self.total_episodes_completed = 0
 
     # ------------------------------------------------------------------
     # Action selection
@@ -121,7 +121,8 @@ class QLearningAgent:
         """
         if random.random() < self.epsilon:
             return random.randint(0, N_ACTIONS - 1)   # explore
-        return int(np.argmax(self.q_table[state]))     # exploit
+        row = self.q_table[state]
+        return max(range(N_ACTIONS), key=lambda action: row[action])     # exploit
 
     # ------------------------------------------------------------------
     # Q-table update
@@ -133,10 +134,10 @@ class QLearningAgent:
 
             Q(s, a) ← Q(s, a) + α [ r + γ · max_a' Q(s', a') − Q(s, a) ]
         """
-        best_next = np.max(self.q_table[next_state])
+        best_next = max(self.q_table[next_state])
         td_target = reward + self.gamma * best_next
-        td_error  = td_target - self.q_table[state, action]
-        self.q_table[state, action] += self.alpha * td_error
+        td_error  = td_target - self.q_table[state][action]
+        self.q_table[state][action] += self.alpha * td_error
 
     # ------------------------------------------------------------------
     # Episode bookkeeping
@@ -145,6 +146,7 @@ class QLearningAgent:
     def end_episode(self, total_reward: float):
         """Call at the end of every episode to decay ε and record reward."""
         self.episode_rewards.append(total_reward)
+        self.total_episodes_completed += 1
         self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
 
     # ------------------------------------------------------------------
@@ -161,6 +163,7 @@ class QLearningAgent:
             "epsilon_decay": self.epsilon_decay,
             "epsilon_min":   self.epsilon_min,
             "episode_rewards": self.episode_rewards,
+            "total_episodes_completed": self.total_episodes_completed,
         }
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
@@ -173,13 +176,14 @@ class QLearningAgent:
             return
         with open(path) as f:
             data = json.load(f)
-        self.q_table       = np.array(data["q_table"])
+        self.q_table       = data["q_table"]
         self.alpha         = data["alpha"]
         self.gamma         = data["gamma"]
         self.epsilon       = data["epsilon"]
         self.epsilon_decay = data["epsilon_decay"]
         self.epsilon_min   = data["epsilon_min"]
         self.episode_rewards = data.get("episode_rewards", [])
+        self.total_episodes_completed = data.get("total_episodes_completed", len(self.episode_rewards))
         print("[Q-agent] Loaded from {}  (ε={:.3f})".format(path, self.epsilon))
 
     # ------------------------------------------------------------------
@@ -192,6 +196,6 @@ class QLearningAgent:
         print(header)
         print("-" * (12 + 12 * N_ACTIONS))
         for s_idx, s_name in STATE_NAMES.items():
-            row = "{:<12}".format(s_name) + "".join("{:>12.3f}".format(self.q_table[s_idx, a]) for a in range(N_ACTIONS))
+            row = "{:<12}".format(s_name) + "".join("{:>12.3f}".format(self.q_table[s_idx][a]) for a in range(N_ACTIONS))
             print(row)
         print("\nε={:.3f}  Episodes={}".format(self.epsilon, len(self.episode_rewards)))
